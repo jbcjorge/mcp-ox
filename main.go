@@ -22,6 +22,10 @@ const (
 	httpReadTimeout  = 30 * time.Second
 	httpWriteTimeout = 60 * time.Second
 	httpIdleTimeout  = 120 * time.Second
+
+	// Severity bounds for change_severity: 0=Info, 1=Low, 2=Medium, 3=High, 4=Critical, 5=Appox.
+	severityMin = 0
+	severityMax = 5
 )
 
 // Tool input types.
@@ -96,6 +100,41 @@ type GetPipelineIssuesInput struct {
 	Severity string `json:"severity,omitempty" jsonschema:"Filter by severity (Critical/High/Medium/Low/Info)"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Max results to return (default 10)"`
 	Offset   int    `json:"offset,omitempty" jsonschema:"Pagination offset (default 0)"`
+}
+
+type GetSbomLibraryDetailsInput struct {
+	AppID       string `json:"app_id" jsonschema:"Application identifier (the appId field from get_sbom results)"`
+	SbomID      string `json:"sbom_id,omitempty" jsonschema:"The library's id field from get_sbom results. Most precise identifier; pinpoints the exact library version"`
+	LibID       string `json:"lib_id,omitempty" jsonschema:"Internal library identifier (libId from get_sbom results)"`
+	LibraryName string `json:"library_name,omitempty" jsonschema:"Exact library name. May be ambiguous if the app has multiple versions of the same library"`
+	Library     string `json:"library,omitempty" jsonschema:"Library name search term (fallback when no id is available)"`
+	ScanID      string `json:"scan_id,omitempty" jsonschema:"Retrieve the library from a specific scan execution"`
+}
+
+type AddCommentToIssueInput struct {
+	IssueID string `json:"issue_id" jsonschema:"The unique OX issue identifier to add a comment to"`
+	Comment string `json:"comment" jsonschema:"The comment text to add to the issue. Cannot be empty"`
+}
+
+type ChangeSeverityInput struct {
+	IssueID  string `json:"issue_id" jsonschema:"The unique OX issue identifier whose severity should be overridden"`
+	Severity int    `json:"severity" jsonschema:"New severity level. Values: 0=Info, 1=Low, 2=Medium, 3=High, 4=Critical, 5=Appox"`
+}
+
+type ReportFalsePositiveInput struct {
+	OxIssueID string `json:"ox_issue_id" jsonschema:"The unique OX issue identifier to mark as a false positive (returned as issueId in scan-issue queries)"`
+	Comment   string `json:"comment" jsonschema:"Comment explaining why this issue is a false positive"`
+}
+
+type ReportFalsePositivePipelineInput struct {
+	OxIssueID string `json:"ox_issue_id" jsonschema:"The unique OX issue identifier of the pipeline issue to mark as a false positive (returned as issueId in pipeline-issue queries)"`
+	Comment   string `json:"comment" jsonschema:"Comment explaining why this pipeline issue is a false positive"`
+}
+
+type ExcludeIssuesInput struct {
+	IssueIDs  []string `json:"issue_ids" jsonschema:"List of OX issue IDs to exclude. At least one ID is required"`
+	Comment   string   `json:"comment,omitempty" jsonschema:"Optional comment explaining the reason for the exclusion"`
+	ExpiredAt string   `json:"expired_at,omitempty" jsonschema:"Optional expiry date in ISO 8601 format (YYYY-MM-DDTHH:mm:ss.SSSZ). If omitted, the exclusion does not expire"`
 }
 
 // RawOutput is an empty output struct; we return raw JSON via CallToolResult.
@@ -481,6 +520,173 @@ func listApplications(ctx context.Context, _ *mcp.CallToolRequest, input ListApp
 	return textResult(formatJSON(data)), RawOutput{}, nil
 }
 
+func getSbomLibraryDetails(ctx context.Context, _ *mcp.CallToolRequest, input GetSbomLibraryDetailsInput) (*mcp.CallToolResult, RawOutput, error) {
+	c := client.Get()
+
+	libInput := map[string]any{
+		"appId": input.AppID,
+	}
+	if input.SbomID != "" {
+		// The GraphQL input names the field "libId" for the library's id in some
+		// deployments; the docs expose "libId" plus name-based lookups. Pass the
+		// most precise identifier the caller provided.
+		libInput["libId"] = input.SbomID
+	}
+	if input.LibID != "" {
+		libInput["libId"] = input.LibID
+	}
+	if input.LibraryName != "" {
+		libInput["libraryName"] = input.LibraryName
+	}
+	if input.Library != "" {
+		libInput["library"] = input.Library
+	}
+	if input.ScanID != "" {
+		libInput["scanId"] = input.ScanID
+	}
+
+	variables := map[string]any{
+		"getSingleSbomLibraryInput": libInput,
+	}
+
+	data, err := c.Execute(ctx, client.QueryGetSingleSbomLibrary, variables)
+	if err != nil {
+		return errorResult(fmt.Sprintf("OX API error: %v", err)), RawOutput{}, nil
+	}
+
+	return textResult(formatJSON(data)), RawOutput{}, nil
+}
+
+func addCommentToIssue(ctx context.Context, _ *mcp.CallToolRequest, input AddCommentToIssueInput) (*mcp.CallToolResult, RawOutput, error) {
+	c := client.Get()
+
+	if input.IssueID == "" || input.Comment == "" {
+		return errorResult("issue_id and comment are required"), RawOutput{}, nil
+	}
+
+	variables := map[string]any{
+		"input": map[string]any{
+			"issueId": input.IssueID,
+			"comment": input.Comment,
+		},
+	}
+
+	data, err := c.Execute(ctx, client.MutationAddCommentToIssue, variables)
+	if err != nil {
+		return errorResult(fmt.Sprintf("OX API error: %v", err)), RawOutput{}, nil
+	}
+
+	return textResult(formatJSON(data)), RawOutput{}, nil
+}
+
+func changeSeverity(ctx context.Context, _ *mcp.CallToolRequest, input ChangeSeverityInput) (*mcp.CallToolResult, RawOutput, error) {
+	c := client.Get()
+
+	if input.IssueID == "" {
+		return errorResult("issue_id is required"), RawOutput{}, nil
+	}
+	if input.Severity < severityMin || input.Severity > severityMax {
+		return errorResult("severity must be between 0 (Info) and 5 (Appox)"), RawOutput{}, nil
+	}
+
+	variables := map[string]any{
+		"input": map[string]any{
+			"issueId":  input.IssueID,
+			"severity": input.Severity,
+		},
+	}
+
+	data, err := c.Execute(ctx, client.MutationUpdateIssueSeverity, variables)
+	if err != nil {
+		return errorResult(fmt.Sprintf("OX API error: %v", err)), RawOutput{}, nil
+	}
+
+	return textResult(formatJSON(data)), RawOutput{}, nil
+}
+
+// buildFalsePositiveVars builds the ReportFalsePositiveInput for the false-positive
+// mutations. It mirrors the official MCP behavior: issue-level rule, create exclusion.
+func buildFalsePositiveVars(oxIssueID, comment string) map[string]any {
+	return map[string]any{
+		"input": map[string]any{
+			"reportedAlertInput": map[string]any{
+				"oxIssueId": oxIssueID,
+				"rule": map[string]any{
+					"oxRuleId":    "issue",
+					"aggIds":      []string{},
+					"cvesAndLibs": []any{},
+				},
+				"comment":       comment,
+				"exclusionMode": "fullScan",
+			},
+			"isExclude": true,
+		},
+	}
+}
+
+func reportFalsePositive(ctx context.Context, _ *mcp.CallToolRequest, input ReportFalsePositiveInput) (*mcp.CallToolResult, RawOutput, error) {
+	c := client.Get()
+
+	if input.OxIssueID == "" || input.Comment == "" {
+		return errorResult("ox_issue_id and comment are required"), RawOutput{}, nil
+	}
+
+	variables := buildFalsePositiveVars(input.OxIssueID, input.Comment)
+
+	data, err := c.Execute(ctx, client.MutationReportFalsePositive, variables)
+	if err != nil {
+		return errorResult(fmt.Sprintf("OX API error: %v", err)), RawOutput{}, nil
+	}
+
+	return textResult(formatJSON(data)), RawOutput{}, nil
+}
+
+func reportFalsePositivePipeline(ctx context.Context, _ *mcp.CallToolRequest, input ReportFalsePositivePipelineInput) (*mcp.CallToolResult, RawOutput, error) {
+	c := client.Get()
+
+	if input.OxIssueID == "" || input.Comment == "" {
+		return errorResult("ox_issue_id and comment are required"), RawOutput{}, nil
+	}
+
+	variables := buildFalsePositiveVars(input.OxIssueID, input.Comment)
+
+	data, err := c.Execute(ctx, client.MutationReportFalsePositiveForPipelineIssues, variables)
+	if err != nil {
+		return errorResult(fmt.Sprintf("OX API error: %v", err)), RawOutput{}, nil
+	}
+
+	return textResult(formatJSON(data)), RawOutput{}, nil
+}
+
+func excludeIssues(ctx context.Context, _ *mcp.CallToolRequest, input ExcludeIssuesInput) (*mcp.CallToolResult, RawOutput, error) {
+	c := client.Get()
+
+	if len(input.IssueIDs) == 0 {
+		return errorResult("at least one issue_id is required"), RawOutput{}, nil
+	}
+
+	excludeInput := map[string]any{
+		"issueIds": input.IssueIDs,
+	}
+	if input.Comment != "" {
+		excludeInput["comment"] = input.Comment
+	}
+	if input.ExpiredAt != "" {
+		excludeInput["expiredAt"] = input.ExpiredAt
+	}
+
+	variables := map[string]any{
+		"input": excludeInput,
+	}
+
+	data, err := c.Execute(ctx, client.MutationExcludeIssues, variables)
+	if err != nil {
+		return errorResult(fmt.Sprintf("OX API error: %v", err)), RawOutput{}, nil
+	}
+
+	return textResult(formatJSON(data)), RawOutput{}, nil
+}
+
 func textResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
@@ -561,6 +767,36 @@ func newServer() *mcp.Server {
 		Name:        "get_pipeline_issues",
 		Description: "List CI/CD pipeline security issues found during pipeline runs. Shows blocking/non-blocking findings with job details, PR links, and enforcement status.",
 	}, getPipelineIssues)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_sbom_library_details",
+		Description: "Get full details for a single SBOM library, including its complete CVE list. Use this to drill into a library returned by get_sbom (which only returns vulnerability counts). Identify the library with app_id plus the most precise identifier available: sbom_id (the library's id), lib_id, or library_name.",
+	}, getSbomLibraryDetails)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "add_comment_to_issue",
+		Description: "Add a comment to an OX issue. Use this to record investigation notes, ownership decisions, or audit-trail context. This is a write operation that modifies the issue in OX Security.",
+	}, addCommentToIssue)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "change_severity",
+		Description: "Override the severity assigned to an OX issue (0=Info, 1=Low, 2=Medium, 3=High, 4=Critical, 5=Appox). The override applies until manually reverted. This is a write operation that modifies the issue in OX Security.",
+	}, changeSeverity)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "report_false_positive",
+		Description: "Report a regular (active scan) issue as a false positive, with a comment explaining the reason. Does NOT support pipeline issues; use report_false_positive_pipeline for those. This is a write operation that creates an exclusion in OX Security.",
+	}, reportFalsePositive)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "report_false_positive_pipeline",
+		Description: "Report a CI/CD pipeline issue as a false positive, with a comment. Use report_false_positive for active (scan) issues instead. This is a write operation that creates an exclusion in OX Security.",
+	}, reportFalsePositivePipeline)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "exclude_issues",
+		Description: "Create exclusions for one or more issues in bulk, with an optional comment and expiry date. Excluded issues no longer appear in active issue queries until the exclusion expires or is removed. This is a write operation that modifies OX Security state.",
+	}, excludeIssues)
 
 	return server
 }

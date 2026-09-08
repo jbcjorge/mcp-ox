@@ -1,4 +1,4 @@
-.PHONY: all build install clean test test-report fmt vet shadow lint vuln gosec gitleaks cyclomatic cognitive check tools release version tag
+.PHONY: all build install clean test test-report fmt vet shadow lint vuln gosec gitleaks cyclomatic cognitive check tools release version tag update-deps
 
 BINARY      := mcp-ox-security
 PREFIX      ?= $(HOME)/.local/bin
@@ -13,6 +13,14 @@ VERSION ?= $(shell \
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
 all: check build
+
+## update-deps: Update direct dependencies to latest, tidy, and verify
+update-deps:
+	go list -m -f '{{if not .Indirect}}{{.Path}}{{end}}' all | tail -n +2 | xargs -I{} go get {}@latest
+	go get go@latest
+	go mod tidy
+	go build ./...
+	go test -count=1 ./...
 
 ## tools: Install development tools
 tools:

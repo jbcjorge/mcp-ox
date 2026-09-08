@@ -280,3 +280,181 @@ query GetCICDIssues($getCICDIssuesInput: CICDIssuesInput) {
   }
 }
 `
+
+// QueryGetSingleSbomLibrary fetches full details (including CVEs) for one SBOM library.
+const QueryGetSingleSbomLibrary = `
+query GetSingleSbomLibrary($getSingleSbomLibraryInput: GetSingleSbomLibraryInput) {
+  getSingleSbomLibrary(getSingleSbomLibraryInput: $getSingleSbomLibraryInput) {
+    id
+    language
+    libraryName
+    libraryVersion
+    license
+    appName
+    appId
+    location
+    locationLink
+    appLink
+    dependencyType
+    dependencyLevel
+    source
+    pkgName
+    purl
+    libLink
+    packageManager
+    packageManagerLink
+    latestVersion
+    latestVersionDate
+    usedVersionReleaseDate
+    firstSeenDate
+    stars
+    forks
+    openIssues
+    maintainers
+    contributors
+    downloads
+    sourceLink
+    notPopular
+    licenseIssue
+    licenseLink
+    malicious
+    malwareType
+    notMaintained
+    isDeprecated
+    notUpdated
+    projectDescription
+    pinState
+    declaredConstraint
+    lockfilePresent
+    referenceCount
+    triggerPackage
+    vulnerabilityCounts { appox critical high medium low info }
+    vulnerabilities {
+      issueId
+      cve
+      cveLink
+      oxSeverity
+      severityFromTool
+      cvssVersion
+      epss
+      percentile
+      libName
+      libVersion
+      dependencyChain
+      chainDepth
+      exploitInTheWild
+      exploitInTheWildLink
+      description
+      dateDiscovered
+      minorVerWithFix
+      majorVerWithFix
+      runtimeStatus
+      originalSeverity
+      cwe { name shortName description url }
+    }
+    references {
+      triggerPackage
+      location
+      locationLink
+      dependencyType
+      dependencyLevel
+      fileName
+      declaredConstraint
+      commit { commitedAt committerName committerEmail }
+    }
+    maintainersList { name email }
+    artifactInSbomLibs {
+      image imageLink imageCreatedAt sha os osVersion baseImage baseImageVersion tag layer registryName source
+    }
+  }
+}
+`
+
+// MutationAddCommentToIssue adds a comment to an issue. Returns Boolean.
+const MutationAddCommentToIssue = `
+mutation AddCommentToIssue($input: addCommentToIssueInput!) {
+  addCommentToIssue(input: $input)
+}
+`
+
+// MutationUpdateIssueSeverity overrides the severity of an issue. Returns Boolean.
+const MutationUpdateIssueSeverity = `
+mutation UpdateIssueSeverity($input: UpdateIssueSeverityInput!) {
+  updateIssueSeverity(input: $input)
+}
+`
+
+// MutationReportFalsePositive reports a regular (scan) issue as a false positive.
+const MutationReportFalsePositive = `
+mutation ReportAlertAsFalsePositive($input: ReportFalsePositiveInput!) {
+  reportAlertAsFalsePositive(input: $input) {
+    aggregationsStatus
+    exclusionInfo {
+      totalExclusions
+      totalFilteredExclusions
+      exclusions {
+        exclusionId
+        exclusionType
+        exclusionTypeLabel
+        oxIssueId
+        issueName
+        appName
+        comment
+        createdAt
+        expiredAt
+        isActive
+        fp
+      }
+    }
+  }
+}
+`
+
+// MutationReportFalsePositiveForPipelineIssues reports a pipeline (CI/CD) issue as a false positive.
+const MutationReportFalsePositiveForPipelineIssues = `
+mutation ReportAlertAsFalsePositiveForPipelineIssues($input: ReportFalsePositiveInput!) {
+  reportAlertAsFalsePositiveForPipelineIssues(input: $input) {
+    aggregationsStatus
+    exclusionInfo {
+      totalExclusions
+      totalFilteredExclusions
+      exclusions {
+        exclusionId
+        exclusionType
+        exclusionTypeLabel
+        oxIssueId
+        issueName
+        appName
+        comment
+        createdAt
+        expiredAt
+        isActive
+        fp
+      }
+    }
+  }
+}
+`
+
+// MutationExcludeIssues creates exclusions for one or more issues in bulk.
+const MutationExcludeIssues = `
+mutation ExcludeIssues($input: ExcludeIssuesInput!) {
+  excludeIssues(input: $input) {
+    totalExclusions
+    totalFilteredExclusions
+    exclusions {
+      exclusionId
+      exclusionType
+      exclusionTypeLabel
+      oxIssueId
+      issueName
+      appName
+      comment
+      createdAt
+      expiredAt
+      isActive
+      status
+    }
+  }
+}
+`

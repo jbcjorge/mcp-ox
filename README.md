@@ -40,6 +40,7 @@ This server uses the OX GraphQL API's `conditionalFilters` for reliable, structu
 | Tool | Description |
 |------|-------------|
 | `get_sbom` | List all dependencies for an app (versions, licenses, vuln counts) |
+| `get_sbom_library_details` | Full details for one library, including its complete CVE list (drill-down from `get_sbom`) |
 | `get_vulnerable_libraries` | List vulnerable deps with CVE details, EPSS, fix versions, exploit info |
 
 ### Pipeline tools
@@ -47,6 +48,18 @@ This server uses the OX GraphQL API's `conditionalFilters` for reliable, structu
 | Tool | Description |
 |------|-------------|
 | `get_pipeline_issues` | CI/CD pipeline findings with job details, enforcement, PR links |
+
+### Write tools
+
+These modify state in OX Security. Use with care.
+
+| Tool | Description |
+|------|-------------|
+| `add_comment_to_issue` | Add a comment to an issue (investigation notes, audit trail) |
+| `change_severity` | Override an issue's severity (0=Info, 1=Low, 2=Medium, 3=High, 4=Critical, 5=Appox) |
+| `report_false_positive` | Mark a regular (scan) issue as a false positive with a comment |
+| `report_false_positive_pipeline` | Mark a CI/CD pipeline issue as a false positive with a comment |
+| `exclude_issues` | Bulk-exclude one or more issues, with optional comment and expiry date |
 
 ## search_issues filters
 
