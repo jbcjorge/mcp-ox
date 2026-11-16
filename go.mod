@@ -1,9 +1,9 @@
 module github.com/jbcjorge/mcp-ox
 
-go 1.27.1
+go 1.27.3
 
 require (
-	github.com/jbcjorge/errors-library v0.1.1
+	github.com/jbcjorge/errors-library v0.2.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 )
 
